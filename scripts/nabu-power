@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# nabu-power — 骁龙 860（小米平板 5）三簇 CPU 档位切换
+#
+#   saver        省电：三簇都压低
+#   balanced     平衡（默认）：全 schedutil
+#   performance  性能：中核+大核钉满，小核按需
+#   current      只输出档位名（给 DMS 插件用）
+#   status       看当前状态
+#
+# 为什么分簇：policy0 = cpu0-3（小核 A55，≤1.79GHz），
+# policy4 = cpu4-6（中核 A76，≤2.42GHz），policy7 = cpu7（大核 A76，≤2.96GHz）。
+# 只把干活的簇钉满，比八核全 performance 省电得多。
+#
+# 注：/sys/devices/system/cpu/cpufreq/boost 在 qcom-cpufreq-hw 上只能关不能开
+# （写 1 返回 EINVAL），而且 performance governor 本身就能把大核顶到 2.96GHz
+# 的硬件上限，所以这里不碰 boost。
+
+set -uo pipefail
+
+CPUFREQ=/sys/devices/system/cpu/cpufreq
+
+set_gov() {
+    printf '%s' "$2" | sudo tee "$CPUFREQ/policy$1/scaling_governor" >/dev/null
+}
+
+# 从三簇 governor 反推当前档位，不依赖状态文件
+detect_mode() {
+    local p0 p4 p7
+    p0=$(cat "$CPUFREQ/policy0/scaling_governor" 2>/dev/null)
+    p4=$(cat "$CPUFREQ/policy4/scaling_governor" 2>/dev/null)
+    p7=$(cat "$CPUFREQ/policy7/scaling_governor" 2>/dev/null)
+    if [ "$p0" = "powersave" ] && [ "$p4" = "powersave" ]; then
+        echo saver
+    elif [ "$p4" = "performance" ] || [ "$p7" = "performance" ]; then
+        echo performance
+    else
+        echo balanced
+    fi
+}
+
+case "${1:-status}" in
+saver)
+    set_gov 0 powersave
+    set_gov 4 powersave
+    set_gov 7 schedutil
+    echo "省电模式"
+    ;;
+balanced)
+    set_gov 0 schedutil
+    set_gov 4 schedutil
+    set_gov 7 schedutil
+    echo "平衡模式"
+    ;;
+performance)
+    set_gov 0 schedutil
+    set_gov 4 performance
+    set_gov 7 performance
+    echo "性能模式"
+    ;;
+current)
+    detect_mode
+    ;;
+status)
+    printf '  %-10s %-14s %s\n' "簇" "governor" "当前频率"
+    for p in 0 4 7; do
+        g=$(cat "$CPUFREQ/policy$p/scaling_governor" 2>/dev/null)
+        c=$(cat "$CPUFREQ/policy$p/scaling_cur_freq" 2>/dev/null)
+        printf '  policy%-3s %-14s %s MHz\n' "$p" "$g" "$(( ${c:-0} / 1000 ))"
+    done
+    printf '  档位       %s\n' "$(detect_mode)"
+    ;;
+*)
+    echo "用法: nabu-power {saver|balanced|performance|current|status}" >&2
+    exit 1
+    ;;
+esac
