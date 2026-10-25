@@ -1,0 +1,18 @@
+{
+    "id": "nabuPower",
+    "name": "Power Mode",
+    "description": "Switch CPU power profiles (saver / balanced / performance) on Snapdragon tablets",
+    "version": "0.1.0",
+    "author": "LilFishyChan",
+    "icon": "bolt",
+    "type": "widget",
+    "capabilities": [
+        "dankbar-widget"
+    ],
+    "components": {
+        "widget": "./NabuPower.qml"
+    },
+    "permissions": [
+        "process"
+    ]
+}
